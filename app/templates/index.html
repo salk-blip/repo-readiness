@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="检查公开 GitHub 仓库的文档、启动入口、平台依赖和敏感信息风险。">
+  <title>Repo Ready · 仓库接入体检</title>
+  <link rel="stylesheet" href="/static/style.css"><script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="topbar"><a href="/" class="brand"><span class="brand-icon">R</span>Repo Ready<span class="brand-sub">仓库接入体检</span></a><a href="/openapi.json" class="api-link">API Schema</a></header>
+<main>
+  <section class="intro"><span class="eyebrow"><span class="dot"></span> KNOW BEFORE YOU CLONE</span>
+    <h1>接手一个仓库，<br>先看清它的<span>接入成本。</span></h1>
+    <p>从文档到启动，从平台依赖到敏感信息。<br class="mobile-break">输入公开 GitHub 链接，获取有证据的静态体检报告。</p>
+  </section>
+  <section class="input-panel" aria-label="开始扫描">
+    <form id="scan-form"><label for="repository">公开 GitHub 仓库</label><div class="input-row"><span class="input-symbol" aria-hidden="true">⌘</span><input id="repository" name="repository" type="url" required maxlength="300" placeholder="https://github.com/owner/repo" autocomplete="url"><button id="submit" type="submit">开始体检</button></div></form>
+    <div class="input-foot"><span>只读分析 · 不执行仓库代码 · 无需访客 Token</span><button type="button" class="text-button" id="example">填入示例仓库</button></div>
+  </section>
+  <div id="status" class="status hidden" role="status" aria-live="polite"></div>
+  <section id="empty" class="feature-grid" aria-label="检测维度">
+    <article><span class="feature-icon">Aa</span><h2>文档完整度</h2><p>README、环境、安装与配置<br>入门信息是否触手可及</p></article>
+    <article><span class="feature-icon">&gt;_</span><h2>依赖与启动</h2><p>依赖清单、版本锁定与入口<br>静态识别启动所需线索</p></article>
+    <article><span class="feature-icon">⌁</span><h2>可移植性</h2><p>Windows 脚本与绝对路径<br>找出个人环境留下的依赖</p></article>
+    <article><span class="feature-icon">◇</span><h2>敏感信息</h2><p>疑似凭证、私钥与配置文件<br>证据脱敏，风险可定位</p></article>
+  </section>
+  <section id="report" class="hidden" aria-label="体检报告">
+    <div class="report-heading"><div><span class="eyebrow">READINESS REPORT</span><h2 id="repo-name"></h2><p id="metadata" class="muted"></p></div><a id="download" class="secondary-button">下载 JSON</a></div>
+    <div id="urgent" class="alert hidden">优先处理疑似凭证泄露。请核实、轮换凭证并检查 Git 历史；高分不代表无风险。</div>
+    <div id="incomplete" class="alert hidden"></div>
+    <div class="summary-grid"><article class="score-card"><span class="muted">静态接入就绪度</span><div class="score"><strong id="score"></strong><span>/ 100</span></div><h3 id="assessment"></h3><p>固定规则评分，可展开查看依据。<br>不证明代码可运行或不存在漏洞。</p></article><article class="dimension-card"><h3>四个维度，看清接入阻碍</h3><div id="dimensions"></div></article></div>
+    <div class="coverage" id="coverage"></div>
+    <section class="risks"><div class="section-heading"><div><h2>主要风险与检查结果 <span id="risk-count" class="count"></span></h2><p class="muted">按严重度与置信度排序；展开查看证据和建议。</p></div><select id="filter" aria-label="按类别筛选"><option value="all">全部类别</option><option value="documentation">文档完整度</option><option value="startup">依赖与启动</option><option value="portability">可移植性</option><option value="secrets">敏感信息</option></select></div><div id="findings"></div></section>
+    <section class="ai-panel"><div><span class="eyebrow">OPTIONAL SECOND OPINION</span><h2>AI 接入建议</h2><p>仅使用脱敏结构化发现，帮助选择优先处理项。</p></div><button id="advice" class="secondary-button">生成建议</button><div id="advice-result" role="status" aria-live="polite"></div></section>
+  </section>
+  <footer><span>Repo Ready / 规则版本 1.0.0</span><span>静态分析提供线索，实际接入仍需验证。</span></footer>
+</main>
+</body></html>

@@ -77,9 +77,9 @@ def test_shell_alternative_prevents_windows_deduction():
 
 def test_unsupported_ecosystem_and_partial_result():
     r = report({"main.go": "package main"}, complete=False)
-    assert not r.dimensions[1].applicable
+    assert r.dimensions[1].applicable
     assert r.provisional and r.assessment == "扫描不完整 · 分数暂定"
-    assert r.score == 67  # 50 / 75, rounded.
+    assert r.score == 50  # All four dimensions remain in the denominator.
 
 
 def test_invalid_json_is_a_finding_not_crash():
@@ -182,3 +182,25 @@ def test_unassessed_ecosystem_cannot_claim_ready():
 def test_document_rule_ids_stable():
     r = report({"main.py": "pass"})
     assert "DOC_INSTALL_MISSING" in {f.rule_id for f in r.findings}
+
+
+@pytest.mark.parametrize("manifest,lock,source", [("go.mod","go.sum","main.go"),("pom.xml",None,"Main.java"),("Cargo.toml","Cargo.lock","main.rs"),("Gemfile","Gemfile.lock","main.rb"),("composer.json","composer.lock","main.php")])
+def test_basic_ecosystem_manifest_scores(manifest, lock, source):
+    base = {"README.md": COMPLETE["README.md"], source: ""}
+    missing = report(base)
+    present = report(base | {manifest: ""})
+    assert missing.score == 75
+    assert present.score == 84
+    assert present.dimensions[1].score == 10
+    assert not present.assessment_complete
+    assert present.coverage.complete and not present.coverage.skipped
+    assert present.assessment_notes
+    if lock:
+        locked = report(base | {manifest: "", lock: ""})
+        assert locked.dimensions[1].score == 15 and locked.score == 84
+
+
+def test_supported_assessment_and_file_coverage_independent():
+    r = report(COMPLETE, complete=False)
+    assert r.assessment_complete and not r.coverage.complete
+    assert not r.assessment_notes

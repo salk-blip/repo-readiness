@@ -54,8 +54,14 @@ function render(report) {
   $("metadata").textContent = `${report.branch} · commit ${report.commit_sha} · ${new Date(report.scanned_at).toLocaleString("zh-CN")} · 规则 ${report.rule_version}`;
   $("score").textContent = String(report.score); $("assessment").textContent = report.assessment;
   $("urgent").classList.toggle("hidden", !report.urgent);
-  $("incomplete").classList.toggle("hidden", !report.provisional);
-  $("incomplete").textContent = "评估范围有限：分数仅供暂时参考。" + report.coverage.warnings.join(" ") + " 请查看下方跳过原因。";
+  const notices = [];
+  if (!report.coverage.complete) {
+    notices.push("文件扫描不完整：分数暂定。", ...report.coverage.warnings);
+    if (Object.keys(report.coverage.skipped).length) notices.push("请查看下方跳过原因。");
+  }
+  if (report.assessment_complete === false) notices.push(...report.assessment_notes);
+  $("incomplete").classList.toggle("hidden", notices.length === 0);
+  $("incomplete").textContent = notices.join(" ");
   $("download").href = `/api/scans/${currentId}/report`;
   $("dimensions").replaceChildren();
   for (const d of report.dimensions) {
@@ -70,7 +76,7 @@ function render(report) {
     row.append(label, track, details); $("dimensions").append(row);
   }
   const c = report.coverage;
-  $("coverage").replaceChildren(element("span", `已扫描 ${c.scanned_files} 个文本文件`), element("span", `文本 ${(c.scanned_bytes / 1024).toFixed(1)} KB`), element("span", `生态：${report.ecosystems.join("、")}`), element("span", c.complete ? "既定扫描范围已完成" : "扫描范围不完整"));
+  $("coverage").replaceChildren(element("span", `已扫描 ${c.scanned_files} 个文本文件`), element("span", `文本 ${(c.scanned_bytes / 1024).toFixed(1)} KB`), element("span", `生态：${report.ecosystems.join("、")}`), element("span", c.complete ? "文件扫描范围已完成" : "文件扫描范围不完整"));
   const details = element("details"); details.append(element("summary", "查看扫描范围与跳过原因"));
   details.append(element("p", "仅检查当前 commit；不扫描 Git 历史、子模块、LFS 实体、依赖和构建目录。不执行代码。归档条目：" + c.entries));
   for (const [reason, count] of Object.entries(c.skipped)) details.append(element("p", reason + "：" + count));

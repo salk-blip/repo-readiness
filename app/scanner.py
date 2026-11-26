@@ -76,9 +76,14 @@ def scan(files: dict[str, str], repository: str, branch: str, sha: str, coverage
     python = bool(names & {"pyproject.toml", "requirements.txt", "setup.py", "pipfile", "environment.yml"}) or any(p.endswith(".py") for p in files)
     node = "package.json" in names or any(p.endswith((".js", ".ts", ".tsx", ".jsx")) for p in files)
     ecosystems = [label for label, present in [("Python", python), ("Node.js", node)] if present]
-    manifests = names & {"pyproject.toml", "requirements.txt", "setup.py", "pipfile", "environment.yml", "package.json"}
+    extra = {"Go": ({"go.mod"}, {"go.sum"}, (".go",)), "Java": ({"pom.xml"}, set(), (".java",)), "Rust": ({"cargo.toml"}, {"cargo.lock"}, (".rs",)), "Ruby": ({"gemfile"}, {"gemfile.lock"}, (".rb",)), "PHP": ({"composer.json"}, {"composer.lock"}, (".php",))}
+    detected_extra = [label for label, (manifest_names, _, extensions) in extra.items() if names & manifest_names or any(p.endswith(extensions) for p in files)]
+    ecosystems.extend(detected_extra)
+    assessment_complete = bool(python or node) and not detected_extra
+    manifests = names & {"pyproject.toml", "requirements.txt", "setup.py", "pipfile", "environment.yml", "package.json", "go.mod", "pom.xml", "cargo.toml", "gemfile", "composer.json"}
     lock = bool(names & {"uv.lock", "poetry.lock", "pipfile.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"})
     lock |= any(PurePosixPath(p).name.lower().startswith("requirements") and "==" in content for p, content in files.items())
+    lock |= any(bool(names & manifest_names) and bool(names & locks) for manifest_names, locks, _ in extra.values())
     startup = False
     for path, content in files.items():
         base = PurePosixPath(path).name.lower()
@@ -99,16 +104,15 @@ def scan(files: dict[str, str], repository: str, branch: str, sha: str, coverage
         if path.endswith(".py"):
             startup |= bool(re.search(r'''if\s+__name__\s*==\s*["']__main__["']''', content))
     startup |= bool(re.search(r"(?i)(uvicorn\s+[\w.]+:\w+|python\s+(?:-m\s+)?[\w./-]+)", readme))
-    checks = [("依赖清单", bool(manifests), 10), ("锁定版本机制", lock, 5), ("静态启动入口", startup, 10)]
+    checks = [("依赖清单", bool(manifests), 10), ("锁定版本机制", lock, 5), ("静态启动入口", startup and assessment_complete, 10)]
     start = Dimension(key="startup", label="依赖与启动", score=sum(n for _, ok, n in checks if ok), maximum=25,
-        applicable=bool(ecosystems), details=[f"{'已识别' if ok else '未识别'}：{label}（{n} 分）" for label, ok, n in checks])
-    if not ecosystems:
-        start.details = ["未识别到 Python / Node.js，当前不深入分析此生态，按适用维度折算总分。"]
-    else:
-        for label, ok, _ in checks:
-            if not ok:
-                add("START_" + {"依赖清单":"MANIFEST", "锁定版本机制":"LOCK", "静态启动入口":"ENTRY"}[label] + "_MISSING", "startup", "medium", "medium", f"未识别到{label}",
-                    "此项为仓库级静态启发式检查，不证明启动成功或依赖可安装。", f"补充{label}，并在 README 说明用途。")
+        applicable=True, details=[f"{'已识别' if ok else '未识别'}：{label}（{n} 分）" for label, ok, n in checks])
+    if not assessment_complete:
+        start.details.append("仅做清单与版本锁定文件存在性检测；启动入口未深入评估，总分最高 84 分。")
+    for label, ok, _ in checks:
+        if not ok and (label != "静态启动入口" or assessment_complete):
+            add("START_" + {"依赖清单":"MANIFEST", "锁定版本机制":"LOCK", "静态启动入口":"ENTRY"}[label] + "_MISSING", "startup", "medium", "medium", f"未识别到{label}",
+                "仓库级静态检查；未识别不等于一定缺失。", f"补充{label}并在 README 说明。")
 
     path_count = windows_count = 0
     for path, content in sorted(files.items()):
@@ -181,13 +185,16 @@ def scan(files: dict[str, str], repository: str, branch: str, sha: str, coverage
     dimensions = [doc, start, portability, secrets]
     applicable = [d for d in dimensions if d.applicable]
     score = round(100 * sum(d.score for d in applicable) / sum(d.maximum for d in applicable))
+    if not assessment_complete:
+        score = min(score, 84)
     urgent = any(f.category == "secrets" and f.severity == "high" and f.confidence == "high" for f in findings)
     assessment = "较易接入" if score >= 85 else "建议修复后接入" if score >= 65 else "接入阻碍较多"
-    if not start.applicable:
+    if not assessment_complete:
         assessment = "依赖与启动未评估 · 就绪度待核实"
     if not coverage.complete:
         assessment = "扫描不完整 · 分数暂定"
     findings.sort(key=lambda f: (LEVEL[f.severity], LEVEL.get(f.confidence, 3), f.path or "", f.line or 0))
     return Report(repository=repository, branch=branch, commit_sha=sha, scanned_at=datetime.now(timezone.utc).isoformat(),
-        ecosystems=ecosystems or ["未深入支持的生态"], score=score, assessment=assessment, provisional=not coverage.complete or not start.applicable,
+        ecosystems=ecosystems or ["未深入支持的生态"], score=score, assessment=assessment, provisional=not coverage.complete or not assessment_complete,
+        assessment_complete=assessment_complete, assessment_notes=[] if assessment_complete else ["依赖与启动仅做基础存在性检查，未完整评估；总分最高 84 分。"],
         urgent=urgent, coverage=coverage, dimensions=dimensions, findings=findings)

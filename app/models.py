@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel, Field
 
-RULE_VERSION = "1.1.0"
+RULE_VERSION = "1.2.0"
 
 
 class Finding(BaseModel):
@@ -46,6 +46,8 @@ class Report(BaseModel):
     ecosystems: list[str]
     score: int
     assessment: str
+    assessment_complete: bool = True
+    assessment_notes: list[str] = Field(default_factory=list)
     provisional: bool
     urgent: bool
     coverage: Coverage

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from . import github
 from .advice import generate_advice
+from .config import load_environment, positive_setting
 from .scanner import scan
 from .store import Store
 
@@ -22,14 +23,18 @@ ROOT = Path(__file__).resolve().parent
 
 @asynccontextmanager
 async def lifespan(app):
+    load_environment()
+    github.configure_limits()
+    app.state.scan_timeout = positive_setting("SCAN_TIMEOUT_SECONDS", 300, 1800)
     app.state.store = Store(os.getenv("DATABASE_PATH", str(ROOT.parent / "data" / "reports.sqlite3")))
     app.state.semaphore = asyncio.Semaphore(2)
     app.state.tasks = set()
     app.state.advice_tasks = set()
     yield
-    for task in app.state.tasks:
+    tasks = list(app.state.tasks)
+    for task in tasks:
         task.cancel()
-    await asyncio.gather(*app.state.tasks, return_exceptions=True)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 app = FastAPI(title="Repo Ready · Git 仓库接入体检", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -64,11 +69,12 @@ async def worker(scan_id: str):
     store = app.state.store
     async with app.state.semaphore:
         record = store.get(scan_id)
+        data = None
         try:
-            async with asyncio.timeout(120):
+            async with asyncio.timeout(app.state.scan_timeout):
                 record.update(status="running", stage="解析默认分支与 commit")
                 store.put(record)
-                async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(60, connect=20), follow_redirects=False) as client:
                     branch, sha = await github.resolve(client, record["repository"])
                     record.update(stage="下载固定 commit 的源码", branch=branch, commit_sha=sha)
                     store.put(record)
@@ -80,7 +86,7 @@ async def worker(scan_id: str):
                 record.update(status="complete" if coverage.complete else "partial", stage="报告已生成", report=report.model_dump())
                 store.put(record)
         except TimeoutError:
-            record.update(status="failed", stage="扫描超时", error="超过 120 秒时限，请重试或选择较小仓库。")
+            record.update(status="failed", stage="扫描超时", error=f"超过 {app.state.scan_timeout} 秒时限，可在 .env 调整 SCAN_TIMEOUT_SECONDS 后重启。")
             store.put(record)
         except (github.ScanError, httpx.HTTPError) as exc:
             message = str(exc) if isinstance(exc, github.ScanError) else "连接 GitHub 失败，请检查网络后重试。"
@@ -90,6 +96,9 @@ async def worker(scan_id: str):
             # Do not log exception values: untrusted source or response bodies may contain credentials.
             record.update(status="failed", stage="扫描失败", error="无法完成该仓库的静态分析，请重试或检查仓库格式。")
             store.put(record)
+        finally:
+            if data is not None and hasattr(data, "close"):
+                data.close()
 
 
 @app.post("/api/scans", status_code=202)

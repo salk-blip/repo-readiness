@@ -150,3 +150,33 @@ def test_archive_limits_are_explicit(monkeypatch):
 def test_bad_archive_is_safe_error():
     with pytest.raises(github.ScanError):
         github.read_archive(b"not zip")
+
+
+def test_routes_and_windows_case():
+    r = report(COMPLETE | {"routes.py": '@app.get("/users/me")\n@app.get("/users/page/<int:page>")\n'})
+    assert not any(f.rule_id == "USER_PATH" for f in r.findings)
+    r = report(COMPLETE | {"run.cmd": "cd C:\\Users\\Alice"})
+    assert any(f.rule_id == "USER_PATH" for f in r.findings)
+
+
+def test_documentation_paths_do_not_deduct():
+    r = report(COMPLETE | {"docs/setup.md": "/Users/alice/project\n/home/alice/project"})
+    assert r.dimensions[2].score == 20
+    assert all(f.severity == "info" for f in r.findings)
+
+
+def test_low_risk_secret_deduction_capped():
+    r = report(COMPLETE | {"tests/settings.txt": "\n".join('password="synthetic-value"' for _ in range(20))})
+    assert r.dimensions[3].score == 25
+
+
+def test_unassessed_ecosystem_cannot_claim_ready():
+    r = report({"README.md": COMPLETE["README.md"], "main.go": "package main"})
+    assert r.provisional
+    assert "未评估" in r.assessment
+    assert r.assessment != "较易接入"
+
+
+def test_document_rule_ids_stable():
+    r = report({"main.py": "pass"})
+    assert "DOC_INSTALL_MISSING" in {f.rule_id for f in r.findings}

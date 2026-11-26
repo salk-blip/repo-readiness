@@ -55,7 +55,7 @@ function render(report) {
   $("score").textContent = String(report.score); $("assessment").textContent = report.assessment;
   $("urgent").classList.toggle("hidden", !report.urgent);
   $("incomplete").classList.toggle("hidden", !report.provisional);
-  $("incomplete").textContent = "扫描不完整：分数仅供暂时参考。" + report.coverage.warnings.join(" ") + " 请查看下方跳过原因。";
+  $("incomplete").textContent = "评估范围有限：分数仅供暂时参考。" + report.coverage.warnings.join(" ") + " 请查看下方跳过原因。";
   $("download").href = `/api/scans/${currentId}/report`;
   $("dimensions").replaceChildren();
   for (const d of report.dimensions) {

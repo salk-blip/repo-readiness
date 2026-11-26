@@ -12,7 +12,7 @@ from .models import Coverage, Dimension, Finding, Report
 TOKEN = re.compile(r"(?i)(?<![\w-])(?:sk-[a-z0-9_-]{8,}|AKID[a-z0-9]{8,}|Bearer\s+[a-z0-9._~+/=-]{8,})")
 ASSIGNMENT = re.compile(r'''(?i)(["']?(?:[\w-]*(?:api[_-]?key|secret(?:[_-]?key)?|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key))["']?\s*[:=]\s*)([^\r\n,;}]+)''')
 PRIVATE = re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----")
-USER_PATH = re.compile(r'''(?i)(?<![\w])(?:[a-z]:[\\/](?!/)[^\s"'<>`]*|\\\\[a-z0-9_.-]+\\[^\s"'<>`]*|/(?:Users|home)/[^\s"'<>`]+)''')
+USER_PATH = re.compile(r'''(?<![\w])(?:[a-zA-Z]:[\\/](?!/)[^\s"'<>`]*|\\\\[a-z0-9_.-]+\\[^\s"'<>`]*|/(?:Users|home)/[^\s"'<>`]+)''')
 ABSOLUTE = re.compile(r'''["'](/(?:opt|srv|var|mnt|data|tmp|etc)/[^"'\r\n]+)["']''')
 PLACEHOLDER = re.compile(r"(?i)(example|placeholder|your[_ -]|dummy|changeme|replace|redacted|\$\{|\$[A-Z_]+|<[^>]+>|\*{3,}|x{4,})")
 LEVEL = {"high": 0, "medium": 1, "low": 2, "info": 3}
@@ -69,7 +69,7 @@ def scan(files: dict[str, str], repository: str, branch: str, sha: str, coverage
         details=[f"{'已识别' if ok else '未识别'}：{label}（{points} 分）" for label, ok, points in doc_checks])
     for label, ok, _ in doc_checks:
         if not ok:
-            add("DOC_" + str(len(findings)), "documentation", "low", "medium", f"未识别到{label}",
+            add("DOC_" + {"README 存在":"README", "项目说明":"DESCRIPTION", "环境要求":"ENVIRONMENT", "安装步骤":"INSTALL", "启动步骤":"RUN", "配置说明":"CONFIG"}[label] + "_MISSING", "documentation", "low", "medium", f"未识别到{label}",
                 "依据静态文档信号判断，可能需要人工核实。", f"在根目录 README 补充{label}及可复制的操作步骤。", readme_path, 1 if readme_path else None)
 
     names = {PurePosixPath(p).name.lower() for p in files}
@@ -107,7 +107,7 @@ def scan(files: dict[str, str], repository: str, branch: str, sha: str, coverage
     else:
         for label, ok, _ in checks:
             if not ok:
-                add("START_" + str(len(findings)), "startup", "medium", "medium", f"未识别到{label}",
+                add("START_" + {"依赖清单":"MANIFEST", "锁定版本机制":"LOCK", "静态启动入口":"ENTRY"}[label] + "_MISSING", "startup", "medium", "medium", f"未识别到{label}",
                     "此项为仓库级静态启发式检查，不证明启动成功或依赖可安装。", f"补充{label}，并在 README 说明用途。")
 
     path_count = windows_count = 0
@@ -161,8 +161,9 @@ def scan(files: dict[str, str], repository: str, branch: str, sha: str, coverage
             absolute = ABSOLUTE.search(path_line) if ext not in {".md", ".rst", ".txt"} else None
             if user_path or absolute:
                 is_user = bool(user_path)
-                path_count += is_user
-                add("USER_PATH" if is_user else "ABSOLUTE_PATH", "portability", "medium" if is_user else "low", "medium",
+                is_documentation = path.startswith("docs/") or ext in {".md", ".rst", ".txt"}
+                path_count += is_user and not is_documentation
+                add("USER_PATH" if is_user else "ABSOLUTE_PATH", "portability", "info" if is_documentation else ("medium" if is_user else "low"), "medium",
                     "疑似用户环境绝对路径" if is_user else "绝对路径需核实", "可能依赖特定用户、磁盘或运行环境。",
                     "使用相对路径、配置项或用户目录解析；标准系统路径可保留。", path, number, line)
 
@@ -173,17 +174,20 @@ def scan(files: dict[str, str], repository: str, branch: str, sha: str, coverage
         if f.category == "secrets":
             key = (f.path, f.line)
             locations[key] = max(locations.get(key, 0), {"high": 15, "medium": 5, "low": 1, "info": 0}[f.severity])
-    penalty = min(30, sum(locations.values()))
+    low_penalty = min(5, sum(v for v in locations.values() if v == 1))
+    penalty = min(30, low_penalty + sum(v for v in locations.values() if v > 1))
     secrets = Dimension(key="secrets", label="敏感信息", score=30 - penalty, maximum=30,
-        details=[f"同一位置按最高严重度去重；高/中/低风险分别扣 15/5/1 分，共扣 {penalty} 分。", "仅检测当前 commit 的有限文本范围，不代表完整安全审计。"])
+        details=[f"同一位置按最高严重度去重；高/中/低风险分别扣 15/5/1 分，低风险合计最多扣 5 分，共扣 {penalty} 分。", "仅检测当前 commit 的有限文本范围，不代表完整安全审计。"])
     dimensions = [doc, start, portability, secrets]
     applicable = [d for d in dimensions if d.applicable]
     score = round(100 * sum(d.score for d in applicable) / sum(d.maximum for d in applicable))
     urgent = any(f.category == "secrets" and f.severity == "high" and f.confidence == "high" for f in findings)
     assessment = "较易接入" if score >= 85 else "建议修复后接入" if score >= 65 else "接入阻碍较多"
+    if not start.applicable:
+        assessment = "依赖与启动未评估 · 就绪度待核实"
     if not coverage.complete:
         assessment = "扫描不完整 · 分数暂定"
     findings.sort(key=lambda f: (LEVEL[f.severity], LEVEL.get(f.confidence, 3), f.path or "", f.line or 0))
     return Report(repository=repository, branch=branch, commit_sha=sha, scanned_at=datetime.now(timezone.utc).isoformat(),
-        ecosystems=ecosystems or ["未深入支持的生态"], score=score, assessment=assessment, provisional=not coverage.complete,
+        ecosystems=ecosystems or ["未深入支持的生态"], score=score, assessment=assessment, provisional=not coverage.complete or not start.applicable,
         urgent=urgent, coverage=coverage, dimensions=dimensions, findings=findings)

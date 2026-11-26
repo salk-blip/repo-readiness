@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel, Field
 
-RULE_VERSION = "1.0.0"
+RULE_VERSION = "1.1.0"
 
 
 class Finding(BaseModel):

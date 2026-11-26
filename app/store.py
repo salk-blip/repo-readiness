@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import json
 import sqlite3
 from pathlib import Path
@@ -17,8 +18,14 @@ class Store:
                     record.update(status="failed", stage="服务重启", error="服务已重启，请重新提交扫描。")
                     db.execute("UPDATE scans SET payload=? WHERE id=?", (json.dumps(record, ensure_ascii=False), scan_id))
 
+    @contextmanager
     def connect(self):
-        return sqlite3.connect(self.path, timeout=10)
+        db = sqlite3.connect(self.path, timeout=10)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def put(self, record):
         with self.connect() as db:

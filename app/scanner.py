@@ -12,7 +12,7 @@ from .models import Coverage, Dimension, Finding, Report
 TOKEN = re.compile(r"(?i)(?<![\w-])(?:sk-[a-z0-9_-]{8,}|AKID[a-z0-9]{8,}|Bearer\s+[a-z0-9._~+/=-]{8,})")
 ASSIGNMENT = re.compile(r'''(?i)(["']?(?:[\w-]*(?:api[_-]?key|secret(?:[_-]?key)?|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key))["']?\s*[:=]\s*)([^\r\n,;}]+)''')
 PRIVATE = re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----")
-USER_PATH = re.compile(r'''(?<![\w])(?:[a-zA-Z]:[\\/](?!/)[^\s"'<>`]*|\\\\[a-z0-9_.-]+\\[^\s"'<>`]*|/(?:Users|home)/[^\s"'<>`]+)''')
+USER_PATH = re.compile(r'''(?<![\w])(?:[a-zA-Z]:[\\/](?!/)[^\s"'<>`]*|\\\\[a-zA-Z0-9_.-]+\\[^\s"'<>`]*|/(?:Users|home)/[^\s"'<>`]+)''')
 ABSOLUTE = re.compile(r'''["'](/(?:opt|srv|var|mnt|data|tmp|etc)/[^"'\r\n]+)["']''')
 PLACEHOLDER = re.compile(r"(?i)(example|placeholder|your[_ -]|dummy|changeme|replace|redacted|\$\{|\$[A-Z_]+|<[^>]+>|\*{3,}|x{4,})")
 LEVEL = {"high": 0, "medium": 1, "low": 2, "info": 3}

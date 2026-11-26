@@ -153,6 +153,8 @@ def test_bad_archive_is_safe_error():
 
 
 def test_routes_and_windows_case():
+    from app.scanner import USER_PATH
+    assert USER_PATH.search(r"\\SERVER\Share\project")
     r = report(COMPLETE | {"routes.py": '@app.get("/users/me")\n@app.get("/users/page/<int:page>")\n'})
     assert not any(f.rule_id == "USER_PATH" for f in r.findings)
     r = report(COMPLETE | {"run.cmd": "cd C:\\Users\\Alice"})
